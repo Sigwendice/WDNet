@@ -56,8 +56,8 @@ Located in `net/hfrm.py`, this module:
 - Features residual blocks with normalization
 - Combines low-frequency reconstruction with high-frequency detail enhancement
 - `measurement` 参数支持两种测量方式：
-  - `"autoencoder"`：可学习测量矩阵（对应原 `train_hfrm.py` 流程）
-  - `"bigconv"`：全图大矩阵测量，支持从预计算测量值 `forward_from_phix` 重建（对应原 `value_model.py` 流程）
+  - `"autoencoder"`：可学习测量卷积矩阵
+  - `"bigconv"`：全图大矩阵测量，支持从预计算测量值 `forward_from_phix` 重建（测量值重建流程）
 
 ### Diffusion Model
 Located in `net/diffusion.py`, this component:
