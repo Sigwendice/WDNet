@@ -1,8 +1,13 @@
+"""训练器基类与扩散模型训练器。"""
+import os
+
 import torch
 import torch.nn as nn
 import numpy as np
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
+
+import config
 
 
 class EarlyStopping:
@@ -147,6 +152,8 @@ class TrainerBase(nn.Module):
 
 
 class SimpleDiffusionTrainer(TrainerBase):
+    """扩散模型训练器：以 HFRM 的低频输出 xp_l 为条件，预测小波低频的噪声。"""
+
     def __init__(
         self,
         epoches=None,
@@ -177,6 +184,12 @@ class SimpleDiffusionTrainer(TrainerBase):
         start_epoches = kwargs["start_epochs"]
         mean_loss = []
         min_loss = float("inf")
+
+        save_dir = os.path.join(config.CHECKPOINT_DIR, "B_l")
+        loss_sub_dir = os.path.join(config.LOSS_DIR, "B")
+        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(loss_sub_dir, exist_ok=True)
+
         for i in range(start_epoches, self.epoches):
             # if self.IFadjust_learning_rate:
             #     self.adjust_learning_rate(i, self.optimizer.param_groups[0]['lr'])
@@ -216,12 +229,15 @@ class SimpleDiffusionTrainer(TrainerBase):
             mean_loss.append(losses / len(self.train_loader))
 
             if min_loss > losses:
-                torch.save(model2, r".\models\B_l\best{}.pth".format(self.sr))
+                torch.save(model2, os.path.join(save_dir, "best{}.pth".format(self.sr)))
                 min_loss = losses
 
             if (i + 1) % 50 == 0 or i == (self.epoches - 1):
                 torch.save(
-                    model2, r".\models\B_l\epoches{}_sr{}.pth".format(i + 1, self.sr)
+                    model2,
+                    os.path.join(
+                        save_dir, "epoches{}_sr{}.pth".format(i + 1, self.sr)
+                    ),
                 )
 
         plt.figure(figsize=(8, 4))
@@ -230,7 +246,9 @@ class SimpleDiffusionTrainer(TrainerBase):
         plt.xlabel("Epochs")
         plt.ylabel("N_Loss")
         plt.grid(True)
-        plt.savefig(f"./loss/B\epoches{self.epoches}_sr{self.sr}.png")
+        plt.savefig(
+            os.path.join(loss_sub_dir, f"epoches{self.epoches}_sr{self.sr}.png")
+        )
         plt.close()
 
         return model2

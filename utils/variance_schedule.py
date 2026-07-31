@@ -1,4 +1,8 @@
-from networkHelper import *
+"""扩散模型的噪声方差调度（beta schedule）。"""
+import math
+
+import torch
+from torch import nn
 
 
 def cosine_beta_schedule(timesteps, s=0.008, **kwargs):
@@ -28,6 +32,8 @@ def sigmoid_beta_schedule(timesteps, beta_start=0.0001, beta_end=0.02):
 
 
 class VarianceSchedule(nn.Module):
+    """根据 schedule_name 选择对应的 beta 调度函数并生成 timesteps 个 beta。"""
+
     def __init__(
         self, schedule_name="linear_beta_schedule", beta_start=None, beta_end=None
     ):

@@ -1,3 +1,4 @@
+"""通用工具函数与网络辅助模块。"""
 import torch
 from torch import nn
 import numpy as np
