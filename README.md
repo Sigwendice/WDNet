@@ -6,45 +6,119 @@ Single-pixel imaging (SPI) is a technique that utilizes spatial light modulation
 
 WDNet proposes a wavelet-domain dual-branch reconstruction method: the image is decomposed into low- and high-frequency components in the wavelet domain and reconstructed separately — the high-frequency components are restored through a lightweight network (HFRM) to recover texture details, while the low-frequency components guide a diffusion process to maintain structural stability. Experiments demonstrate that under extremely low measurement rates, WDNet achieves clearer and less noisy reconstruction results in both simulated data and real acquisition systems.
 
+For the Chinese version, see [README-zh.md](README-zh.md).
+
 ## Overview
 
 The overall method framework (two-stage wavelet-domain dual-path reconstruction, WDNet):
 
-![WDNet 方法总览 (training)](figures/training.png)
+![WDNet training overview](figures/training.png)
 
 The single-pixel imaging system schematic and the experimental setup:
 
-![单像素成像系统原理图与实验图 (system)](figures/system.png)
+![SPI system and experiment](figures/system.png)
+
+## Quick Start
+
+### Dependencies
+
+- Python 3.8+ (developed and tested on 3.12)
+- A CUDA-enabled GPU is recommended
+
+Install the required packages:
+
+```bash
+pip install torch torchvision
+pip install einops tqdm matplotlib numpy scipy pillow scikit-image
+```
+
+### Data Preparation
+
+The code loads images from folders configured in `config.py`. By default `DATASET_ROOT` points to `../datasets/ffhq` (a sibling folder of the project), organized as:
+
+```
+<parent-of-WDNet>/
+└── datasets/
+    └── ffhq/
+        ├── train/   # training images (jpg / png / jpeg / tif)
+        └── demo/    # test images used by test_demo.py
+```
+
+You can either place your dataset there, or edit `DATASET_ROOT`, `TRAIN_FOLDER`, and `DEMO_FOLDER` in `config.py` to match your local paths. Training crops images into 64×64 patches; demo/test images are split into 64×64 patches internally, so use square images whose side length is a multiple of 64 (e.g., 256×256).
+
+### Training
+
+Training is a two-stage pipeline. Run all commands from the project root.
+
+**Stage 1 — HFRM (high-frequency reconstruction):**
+
+```bash
+python scripts/train_hfrm.py
+```
+
+This jointly optimizes the measurement matrix (AutoEncoder) and the high-frequency recovery network. Weights are saved to `checkpoints/BinA/best_sr{sr}.pth` and loss curves to `loss/BinA/`.
+
+**Stage 2 — Diffusion model:**
+
+```bash
+python scripts/train.py
+```
+
+This trains the DDPM using the HFRM low-frequency output as a condition. It requires the Stage-1 HFRM weights; by default it loads `checkpoints/BinA/A_best5.pth`, so rename `best_sr5.pth` produced by Stage 1 accordingly (or edit the path inside `scripts/train.py`). Weights are saved to `checkpoints/B_l/`.
+
+### Testing
+
+Full reconstruction pipeline (HFRM + diffusion + inverse wavelet transform) on the demo set:
+
+```bash
+python scripts/test_demo.py
+```
+
+Results are written to `result/test{sr}/` for each sampling rate in `sr_list`.
+
+Reconstruction directly from system-simulation measurement values (`.mat`):
+
+```bash
+python scripts/test_from_values.py
+```
+
+This requires the `.mat` files configured via `MATRIX_DIR` in `config.py`.
+
+Evaluate PSNR / SSIM between a ground-truth folder and a reconstruction folder:
+
+```bash
+python utils/metrics.py <gt_dir> <recon_dir>
+```
 
 ## Project Structure
 
 ```
 WDNet/
-├── config.py                # 全局路径与通用配置（数据集、输出目录等）
+├── config.py                # Global paths and general config (datasets, output dirs, etc.)
 ├── data/
-│   └── dataset.py           # 数据集类（ImageDataset、CustomMNIST）
-├── net/                     # 网络模型模块
-│   ├── measurement.py       # 压缩感知测量模块（AutoEncoder、BigConv、BinarizedNN）
-│   ├── wave_t.py            # 小波变换（DWT/IDWT）
-│   ├── hfrm.py              # HFRM 网络（支持 autoencoder / bigconv 两种测量方式）
-│   ├── unet.py              # UNet 去噪骨干网络
-│   └── diffusion.py         # DDPM 扩散模型
+│   └── dataset.py           # Dataset classes (ImageDataset, CustomMNIST)
+├── net/                     # Network modules
+│   ├── measurement.py       # Compressed-sensing measurement module (AutoEncoder, BigConv, BinarizedNN)
+│   ├── wave_t.py            # Wavelet transform (DWT/IDWT)
+│   ├── hfrm.py              # HFRM network (supports 'autoencoder' / 'bigconv' measurements)
+│   ├── unet.py              # UNet denoising backbone
+│   └── diffusion.py         # DDPM diffusion model
 ├── trainers/
-│   └── trainer.py           # 训练器（TrainerBase、SimpleDiffusionTrainer、EarlyStopping）
+│   └── trainer.py           # Trainer (TrainerBase, SimpleDiffusionTrainer, EarlyStopping)
 ├── utils/
-│   ├── helpers.py           # 通用工具函数（embedding、upsample/downsample、extract 等）
-│   ├── variance_schedule.py # 噪声方差调度（linear/cosine/quadratic/sigmoid）
-│   └── metrics.py           # PSNR / SSIM 评估工具（命令行可用）
+│   ├── helpers.py           # Utility functions (embedding, upsample/downsample, extract, etc.)
+│   ├── variance_schedule.py # Noise variance schedule (linear/cosine/quadratic/sigmoid)
+│   └── metrics.py           # PSNR / SSIM evaluation (CLI available)
 ├── scripts/
-│   ├── train_hfrm.py        # HFRM 阶段训练
-│   ├── train.py             # 扩散模型阶段训练
-│   ├── test_demo.py         # 演示测试（HFRM + 扩散模型完整重建）
-│   ├── test_from_values.py  # 从 .mat 系统仿真测量值重建
-│   └── value_to_conv.py     # .mat 测量值调试工具
-├── figures/                 # 论文框架图（training.png、system.png）
-├── checkpoints/             # 模型权重保存目录（自动创建）
-├── loss/                    # 损失曲线图保存目录（自动创建）
-└── result/                  # 重建结果保存目录（自动创建）
+│   ├── train_hfrm.py        # Stage-1 HFRM training
+│   ├── train.py             # Stage-2 diffusion training
+│   ├── test_demo.py         # Demo test (full HFRM + diffusion reconstruction)
+│   ├── test_from_values.py  # Reconstruct from .mat system-simulation measurements
+│   └── value_to_conv.py     # .mat measurement debugging utility
+├── figures/                 # Paper figures (training.png, system.png)
+├── checkpoints/             # Model weights (auto-created)
+├── loss/                    # Loss-curve figures (auto-created)
+└── result/                  # Reconstruction outputs (auto-created)
 ```
 
 ## Key Components
@@ -55,15 +129,15 @@ Located in `net/hfrm.py`, this module:
 - Implements attention mechanisms (spatial and channel attention)
 - Features residual blocks with normalization
 - Combines low-frequency reconstruction with high-frequency detail enhancement
-- `measurement` 参数支持两种测量方式：
-  - `"autoencoder"`：可学习测量卷积矩阵
-  - `"bigconv"`：全图大矩阵测量，支持从预计算测量值 `forward_from_phix` 重建（测量值重建流程）
+- The `measurement` argument supports two measurement modes:
+  - `"autoencoder"`: learnable measurement convolution matrix
+  - `"bigconv"`: full-image large-matrix measurement; supports reconstruction from pre-computed measurements via `forward_from_phix` (measurement-value reconstruction flow)
 
 ### Diffusion Model
 Located in `net/diffusion.py`, this component:
 - Implements a denoising diffusion probabilistic model (DDPM)
 - Supports various noise schedules (linear, cosine, sigmoid, etc.)
-- Works with the HFRM output (低频分量 xp_l) for conditional generation
+- Works with the HFRM output (low-frequency component `xp_l`) for conditional generation
 - Includes forward and reverse diffusion processes
 
 ### UNet
@@ -73,42 +147,6 @@ Located in `net/unet.py`, this serves as the denoising backbone:
 - Uses residual blocks with group normalization
 - Includes up/downsampling operations
 
-## Installation
-
-1. Clone this repository
-2. Install required dependencies:
-   ```bash
-   pip install torch torchvision torchaudio
-   pip install einops tqdm
-   ```
-
-## Usage
-
-所有脚本从项目根目录运行，路径配置见 `config.py`（如数据集目录 `DATASET_ROOT`、`.mat` 测量值目录 `MATRIX_DIR`）。
-
-### Training HFRM
-```bash
-python scripts/train_hfrm.py
-```
-- 权重保存至 `checkpoints/BinA/best_sr{sr}.pth`
-- 损失曲线保存至 `loss/BinA/`
-
-### Training Diffusion Model
-```bash
-python scripts/train.py
-```
-- 需先训练好 HFRM，并修改脚本中加载的权重路径（默认 `checkpoints/BinA/A_best5.pth`）
-- 权重保存至 `checkpoints/B_l/`
-
-### Testing
-```bash
-python scripts/test_demo.py           # 完整重建流程测试
-python scripts/test_from_values.py    # 从 .mat 系统仿真测量值重建
-python utils/metrics.py <原图目录> <重建图目录>   # PSNR/SSIM 评估
-```
-
-Note: Ensure you have the dataset available at `../datasets/ffhq/train` (或修改 `config.py` 中的路径)。
-
 ## Model Architecture
 
 The system follows a two-stage approach:
@@ -117,18 +155,18 @@ The system follows a two-stage approach:
 
 ## Configuration
 
-Key parameters can be adjusted in the training scripts:
+Key training hyperparameters can be adjusted at the top of the training scripts:
 - Image size (`image_size`)
 - Batch size (`batch_size`)
 - Number of epochs (`epoches`)
-- Learning rate (in Adam optimizer)
+- Learning rate (in the Adam optimizer)
 - Wavelet settings
 - Network dimensions
 
 Global paths are centralized in `config.py`:
-- `DATASET_ROOT` / `TRAIN_FOLDER` / `DEMO_FOLDER`: 数据集路径
-- `CHECKPOINT_DIR` / `LOSS_DIR` / `RESULT_DIR`: 输出目录
-- `MATRIX_DIR`: 系统仿真测量值 (.mat) 目录
+- `DATASET_ROOT` / `TRAIN_FOLDER` / `DEMO_FOLDER`: dataset paths
+- `CHECKPOINT_DIR` / `LOSS_DIR` / `RESULT_DIR`: output directories
+- `MATRIX_DIR`: system-simulation measurement values (`.mat`) directory
 
 ## Results
 
@@ -147,7 +185,7 @@ This implementation builds upon various deep learning techniques including:
 If you use this code in your research, please cite:
 
 ```bibtex
-@article{Wen:26,
+@Article{Wen:26,
   author  = {Zhiqiang Wen and Qiu Tu and Qiurong Yan and Siying Huang and Junyuan Yin and Junli Wu and Xiaolong Luo},
   title   = {Dual-branch wavelet diffusion for single-pixel imaging},
   journal = {Opt. Express},
